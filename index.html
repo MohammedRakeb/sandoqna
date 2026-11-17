@@ -132,20 +132,21 @@ function Funds({ session }) {
 
 function Fund({ fund, session, reload }) {
   const [members, setMembers] = useState([]), [months, setMonths] = useState([]), [tx, setTx] = useState([]), [invs, setInvs] = useState([]);
-  const [tab, setTab] = useState('mem'), [open, setOpen] = useState(null), [late, setLate] = useState(false), [msg, setMsg] = useState(''), [edit, setEdit] = useState(null);
+  const [tab, setTab] = useState('mem'), [open, setOpen] = useState(null), [late, setLate] = useState(false), [msg, setMsg] = useState(''), [edit, setEdit] = useState(null), [etx, setEtx] = useState(null), [einv, setEinv] = useState(null);
   const uid = session.user.id;
   const me = members.find(m => m.user_id === uid), admin = me && me.role === 'admin';
   const load = useCallback(async () => {
-    const [m, mm, t, iv] = await Promise.all([
-      sb.from('fund_members').select('*').eq('fund_id', fund.id).order('display_name'),
+    const m = await sb.from('fund_members').select('*').eq('fund_id', fund.id).order('display_name');
+    const isA = (m.data || []).some(x => x.user_id === uid && x.role === 'admin');
+    const [mm, t, iv] = await Promise.all([
       sb.from('member_months').select('*').eq('fund_id', fund.id).order('month'),
-      sb.from('transactions_public').select('*').eq('fund_id', fund.id),
+      sb.from(isA ? 'transactions' : 'transactions_public').select('*').eq('fund_id', fund.id),
       sb.from('investments').select('*').eq('fund_id', fund.id).order('name')]);
     setMembers(m.data || []); setMonths(mm.data || []); setTx(t.data || []); setInvs(iv.data || []);
     if (t.error) setMsg('تعذّر تحميل الحركات: ' + t.error.message);
   }, [fund.id]);
   useEffect(() => { load(); }, [load]);
-  const run = async (p, ok) => { setMsg(''); const { error } = await p; if (error) setMsg('تعذّر التنفيذ: ' + error.message); else if (ok) setMsg(''); await load(); };
+  const run = async (p, ok) => { setMsg(''); const { error } = await p; if (error) setMsg(/overflow/i.test(error.message) ? 'القيمة المُدخلة كبيرة جداً — العائد المتوقع أقصاه 999%' : 'تعذّر التنفيذ: ' + error.message); else if (ok) setMsg(''); await load(); };
   const by = id => months.filter(x => x.member_id === id);
   const lateN = id => by(id).filter(x => x.status === 'late').length;
   const cycle = (m, r) => admin && run(sb.rpc('set_month', { p_member: m.id, p_month: r.month, p_status: r.status === 'late' || r.status === 'pending' ? 'paid' : r.status === 'paid' ? 'exempt' : null }));
@@ -164,6 +165,20 @@ function Fund({ fund, session, reload }) {
   const delTx = id => confirm('حذف هذا القيد؟') && run(sb.from('transactions').delete().eq('id', id));
   const addInv = async ev => { const f = form(ev), el = ev.target; await run(sb.from('investments').insert({ fund_id: fund.id, name: f.n, type: f.ty, capital: +f.cap, expected_rate: +f.rate })); el.reset(); };
   const delInv = v => confirm('حذف المشروع «' + v.name + '»؟ (أرباحه المسجلة تبقى في الرصيد)') && run(sb.from('investments').delete().eq('id', v.id));
+  const saveTx = t => ev => { const f = form(ev); const p = { amount: +f.amt, description: f.desc || null };
+    if (t.kind === 'donation') { p.donor_name = f.name || null; p.anonymous = !!f.anon; }
+    if (t.kind === 'expense') { p.beneficiary = f.ben; p.hide_beneficiary = !!f.hide; }
+    run(sb.from('transactions').update(p).eq('id', t.id)); setEtx(null); };
+  const saveInv = v => ev => { const f = form(ev); run(sb.from('investments').update({ name: f.n, type: f.ty, capital: +f.cap, expected_rate: +f.rate }).eq('id', v.id)); setEinv(null); };
+  const Ed = (onClick) => admin ? html`<button onClick=${onClick} className="text-xs text-emerald-800 border border-emerald-200 rounded-lg px-2 py-1">✏️ تعديل</button>` : null;
+  const TxForm = t => html`<form key=${t.id} onSubmit=${saveTx(t)} className="space-y-2 py-3 border-t bg-emerald-50/50 rounded-lg px-2">
+    ${t.kind === 'donation' && html`<${Inp} name="name" defaultValue=${t.donor_name || ''} placeholder="اسم المتبرع (اختياري)"/>`}
+    ${t.kind === 'expense' && html`<${Inp} name="ben" defaultValue=${t.beneficiary || ''} placeholder="المستفيد" required/>`}
+    <${Inp} name="amt" type="number" min="0.01" step="any" defaultValue=${t.amount} required/>
+    <${Inp} name="desc" defaultValue=${t.description || ''} placeholder="البيان"/>
+    ${t.kind === 'donation' && html`<label className="flex gap-2 text-sm"><input type="checkbox" name="anon" defaultChecked=${!!t.anonymous}/> إظهاره كـ «فاعل خير»</label>`}
+    ${t.kind === 'expense' && html`<label className="flex gap-2 text-sm"><input type="checkbox" name="hide" defaultChecked=${!!t.hide_beneficiary}/> إخفاء اسم المستفيد</label>`}
+    <div className="flex gap-2"><${Btn}>حفظ التعديل<//><${Btn} type="button" cls="border" onClick=${() => setEtx(null)}>إلغاء<//></div></form>`;
   const addProfit = v => ev => { const f = form(ev), el = ev.target; run(sb.from('transactions').insert({ fund_id: fund.id, kind: 'profit', amount: +f.amt, description: 'ربح ' + v.name, investment_id: v.id })).then(() => el.reset()); };
   const wa = m => 'https://wa.me/?text=' + encodeURIComponent('السلام عليكم ' + m.display_name + ' 🌿\nتذكير لطيف بمتأخرات اشتراك «' + fund.name + '» (' + al(lateN(m.id)) + ' — ' + money(lateN(m.id) * fund.fee) + '). جزاك الله خيراً.');
 
@@ -199,21 +214,22 @@ function Fund({ fund, session, reload }) {
   <//>`;
 
   const donTab = html`<${Card}><h3 className="font-bold text-emerald-900 mb-2">سجل أهل الخير</h3>
-    ${byDate('donation').map(t => html`<div key=${t.id} className="flex justify-between gap-2 py-3 border-t"><div><b>${t.donor_name || 'فاعل خير'}</b><div className="text-xs text-gray-500">${t.description || ''} • ${t.occurred_on}</div></div><div className="flex items-center gap-2"><b className="text-emerald-700">${money(t.amount)}</b><${Del} onClick=${() => delTx(t.id)}/></div></div>`)}
+    ${byDate('donation').map(t => etx === t.id ? TxForm(t) : html`<div key=${t.id} className="flex justify-between gap-2 py-3 border-t"><div><b>${t.anonymous ? (admin && t.donor_name ? t.donor_name + ' 🔒 (للأعضاء: فاعل خير)' : 'فاعل خير') : (t.donor_name || 'فاعل خير')}</b><div className="text-xs text-gray-500">${t.description || ''} • ${t.occurred_on}</div></div><div className="flex items-center gap-2"><b className="text-emerald-700">${money(t.amount)}</b>${Ed(() => setEtx(t.id))}<${Del} onClick=${() => delTx(t.id)}/></div></div>`)}
     ${byDate('donation').length === 0 && html`<p className="text-center text-gray-500 py-4">لا توجد تبرعات بعد</p>`}
     ${admin && html`<form onSubmit=${addTx('donation', f => ({ donor_name: f.name || null, anonymous: !!f.anon }))} className="mt-3 pt-3 border-t space-y-2"><b className="text-sm">＋ تسجيل تبرع</b>
       <${Inp} name="name" placeholder="اسم المتبرع (اختياري)"/><${Inp} name="amt" type="number" min="1" step="any" placeholder="المبلغ" required/><${Inp} name="desc" placeholder="الغرض"/>
       <label className="flex gap-2 text-sm"><input type="checkbox" name="anon"/> إظهاره كـ «فاعل خير»</label><${Btn}>حفظ التبرع<//></form>`}<//>`;
 
   const invTab = html`<div className="space-y-3">${invs.map(v => { const p = tx.filter(t => t.kind === 'profit' && t.investment_id === v.id).reduce((s, t) => s + +t.amount, 0); return html`
-    <${Card} key=${v.id}><div className="flex justify-between gap-2"><b>${v.name}</b><span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full">${v.type || 'استثمار'}</span></div>
+    <${Card} key=${v.id}>${einv === v.id ? html`<form onSubmit=${saveInv(v)} className="space-y-2"><${Inp} name="n" defaultValue=${v.name} required/><${Inp} name="ty" defaultValue=${v.type || ''} placeholder="النوع"/><${Inp} name="cap" type="number" min="1" step="any" defaultValue=${v.capital} required/><${Inp} name="rate" type="number" min="0" max="999" step="0.1" defaultValue=${v.expected_rate || 0} required/><div className="flex gap-2"><${Btn}>حفظ التعديل<//><${Btn} type="button" cls="border" onClick=${() => setEinv(null)}>إلغاء<//></div></form>` : html`<div className="flex justify-between items-center gap-2"><b>${v.name}</b><span className="flex items-center gap-2"><span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full">${v.type || 'استثمار'}</span>${Ed(() => setEinv(v.id))}</span></div>`}
       <div className="grid grid-cols-3 gap-2 text-center mt-4 text-sm"><div><div className="text-gray-500 text-xs">رأس المال</div><b>${money(v.capital)}</b></div><div><div className="text-gray-500 text-xs">العائد المتوقع</div><b>${v.expected_rate || 0}%</b></div><div><div className="text-gray-500 text-xs">أرباح فعلية</div><b className="text-emerald-700">${money(p)}</b></div></div>
+      ${tx.filter(t => t.kind === 'profit' && t.investment_id === v.id).map(t => etx === t.id ? TxForm(t) : html`<div key=${t.id} className="flex justify-between items-center text-sm py-1 border-t mt-1"><span className="text-gray-500">أرباح ${t.occurred_on}</span><span className="flex items-center gap-2"><b>${money(t.amount)}</b>${Ed(() => setEtx(t.id))}<${Del} onClick=${() => delTx(t.id)}/></span></div>`)}
       ${admin && html`<form onSubmit=${addProfit(v)} className="flex gap-2 mt-3"><${Inp} name="amt" type="number" min="1" step="any" placeholder="تسجيل ربح ($)" required/><${Btn}>＋ ربح<//><${Del} onClick=${() => delInv(v)}/></form>`}<//>`; })}
     ${invs.length === 0 && html`<p className="text-center text-gray-500 py-6">لا توجد مشاريع استثمارية بعد</p>`}
-    ${admin && html`<${Card}><form onSubmit=${addInv} className="space-y-2"><b>＋ مشروع استثماري جديد</b><${Inp} name="n" placeholder="اسم المشروع" required/><${Inp} name="ty" placeholder="النوع (عقار / أسهم / تجارة)"/><${Inp} name="cap" type="number" min="1" step="any" placeholder="رأس المال" required/><${Inp} name="rate" type="number" min="0" step="0.1" placeholder="العائد المتوقع %" required/><${Btn}>حفظ المشروع<//></form><//>`}</div>`;
+    ${admin && html`<${Card}><form onSubmit=${addInv} className="space-y-2"><b>＋ مشروع استثماري جديد</b><${Inp} name="n" placeholder="اسم المشروع" required/><${Inp} name="ty" placeholder="النوع (عقار / أسهم / تجارة)"/><${Inp} name="cap" type="number" min="1" step="any" placeholder="رأس المال" required/><${Inp} name="rate" type="number" min="0" max="999" step="0.1" placeholder="العائد المتوقع % (حتى 999)" required/><${Btn}>حفظ المشروع<//></form><//>`}</div>`;
 
   const expTab = html`<${Card}><h3 className="font-bold text-emerald-900 mb-2">سجل المصروفات</h3>
-    ${byDate('expense').map(t => html`<div key=${t.id} className="flex justify-between gap-2 py-3 border-t"><div><b>${t.hide_beneficiary ? (admin ? (t.beneficiary || '—') + ' 🔒 (للأعضاء: حالة إنسانية سرية #' + expNum[t.id] + ')' : 'حالة إنسانية سرية #' + expNum[t.id]) : (t.beneficiary || '—')}</b><div className="text-xs text-gray-500">${t.description || ''} • ${t.occurred_on}</div></div><div className="flex items-center gap-2"><b className="text-red-600 whitespace-nowrap">- ${money(t.amount)}</b><${Del} onClick=${() => delTx(t.id)}/></div></div>`)}
+    ${byDate('expense').map(t => etx === t.id ? TxForm(t) : html`<div key=${t.id} className="flex justify-between gap-2 py-3 border-t"><div><b>${t.hide_beneficiary ? (admin ? (t.beneficiary || '—') + ' 🔒 (للأعضاء: حالة إنسانية سرية #' + expNum[t.id] + ')' : 'حالة إنسانية سرية #' + expNum[t.id]) : (t.beneficiary || '—')}</b><div className="text-xs text-gray-500">${t.description || ''} • ${t.occurred_on}</div></div><div className="flex items-center gap-2"><b className="text-red-600 whitespace-nowrap">- ${money(t.amount)}</b>${Ed(() => setEtx(t.id))}<${Del} onClick=${() => delTx(t.id)}/></div></div>`)}
     ${byDate('expense').length === 0 && html`<p className="text-center text-gray-500 py-4">لا توجد مصروفات بعد</p>`}
     ${admin && html`<form onSubmit=${addTx('expense', f => ({ beneficiary: f.ben, hide_beneficiary: !!f.hide }))} className="mt-3 pt-3 border-t space-y-2"><b className="text-sm">＋ تسجيل مصروف / مساعدة</b>
       <${Inp} name="ben" placeholder="المستفيد / الجهة" required/><${Inp} name="amt" type="number" min="1" step="any" placeholder="المبلغ" required/><${Inp} name="desc" placeholder="البيان" required/>
