@@ -1,39 +1,4 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>صندوقنا</title>
-<meta name="theme-color" content="#064e3b">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="صندوقنا">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<script src="https://cdn.tailwindcss.com/3.4.17"></script>
-<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<style>body{background:#f2f6f3;color:#0f2a20;font-family:'Tajawal','Segoe UI',Tahoma,Arial,sans-serif;padding-bottom:env(safe-area-inset-bottom,0px)}</style>
-</head>
-<body>
-<div id="root"></div>
-<script>
-const SB_URL = 'https://qagczlzmpaalgxjuthdm.supabase.co';
-const SB_KEY = 'sb_publishable_mbu-UKqfJRcDWe8Tf4ov0w_TRzFkE-D';
-const sb = supabase.createClient(SB_URL, SB_KEY);
-const html = htm.bind(React.createElement);
-const { useState, useEffect, useCallback } = React;
 
-const MN = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
-const money = n => '$' + Number(n || 0).toLocaleString('en-US');
-const STY = { paid: 'bg-emerald-600 text-white', late: 'bg-red-500 text-white', exempt: 'bg-yellow-300 text-yellow-900', pending: 'bg-orange-400 text-white' };
-const LBL = { paid: '🟢 مدفوع', late: '🔴 متأخر', exempt: '🟡 معفي', pending: '🟠 مراجعة' };
-const al = n => n === 1 ? 'شهر' : n === 2 ? 'شهرين' : n + (n <= 10 ? ' أشهر' : ' شهراً');
-const form = ev => { ev.preventDefault(); return Object.fromEntries(new FormData(ev.target)); };
-const Btn = ({ children, cls = 'bg-emerald-800 text-white', ...p }) => html`<button ...${p} className=${'px-3 py-1.5 rounded-lg text-sm font-medium ' + cls}>${children}</button>`;
 const Inp = p => html`<input ...${p} className="w-full border rounded-lg p-2 bg-white"/>`;
 const Card = ({ children, cls = '' }) => html`<div className=${'bg-white rounded-2xl shadow-sm border border-emerald-100 p-4 ' + cls}>${children}</div>`;
 const arMsg = m => /Invalid login/i.test(m) ? 'البريد أو كلمة المرور غير صحيحة' : /already registered/i.test(m) ? 'هذا البريد مسجل مسبقاً' : /Email not confirmed/i.test(m) ? 'يجب تأكيد البريد من رسالة وصلتك' : /rate limit/i.test(m) ? 'محاولات كثيرة، انتظر قليلاً' : m;
