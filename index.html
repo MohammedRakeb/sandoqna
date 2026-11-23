@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>صندوقنا</title>
+<meta name="theme-color" content="#064e3b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="صندوقنا">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>body{background:#f2f6f3;color:#0f2a20;font-family:'Tajawal','Segoe UI',Tahoma,Arial,sans-serif;padding-bottom:env(safe-area-inset-bottom,0px)}@media print{body *{visibility:hidden}#rep,#rep *{visibility:visible}#rep{position:absolute;top:0;right:0;width:100%;max-height:none!important;overflow:visible!important}.noprint{display:none!important}}</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const SB_URL = 'https://qagczlzmpaalgxjuthdm.supabase.co';
+const SB_KEY = 'sb_publishable_mbu-UKqfJRcDWe8Tf4ov0w_TRzFkE-D';
+const sb = supabase.createClient(SB_URL, SB_KEY);
+const html = htm.bind(React.createElement);
+const { useState, useEffect, useCallback } = React;
+
+const MN = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+const CURS = { USD: { f: v => '$' + v }, SAR: { f: v => v + ' ر.س' }, SDG: { f: v => v + ' ج.س' } };
+let CUR = 'USD';
+const money = n => (CURS[CUR] || CURS.USD).f(Math.abs(Number(n || 0)).toLocaleString('en-US'));
+const STY = { paid: 'bg-emerald-600 text-white', late: 'bg-red-500 text-white', exempt: 'bg-yellow-300 text-yellow-900', pending: 'bg-orange-400 text-white', future: 'bg-gray-200 text-gray-600' };
+const LBL = { paid: '🟢 مدفوع', late: '🔴 متأخر', exempt: '🟡 معفي', pending: '🟠 مراجعة', future: '⚪ قادم' };
+const al = n => n === 1 ? 'شهر' : n === 2 ? 'شهرين' : n + (n <= 10 ? ' أشهر' : ' شهراً');
+const form = ev => { ev.preventDefault(); return Object.fromEntries(new FormData(ev.target)); };
+const Btn = ({ children, cls = 'bg-emerald-800 text-white', ...p }) => html`<button ...${p} className=${'px-3 py-1.5 rounded-lg text-sm font-medium ' + cls}>${children}</button>`;
+const Inp = p => html`<input ...${p} className="w-full border rounded-lg p-2 bg-white"/>`;
+const Card = ({ children, cls = '' }) => html`<div className=${'bg-white rounded-2xl shadow-sm border border-emerald-100 p-4 ' + cls}>${children}</div>`;
+const arMsg = m => /Invalid login/i.test(m) ? 'البريد أو كلمة المرور غير صحيحة' : /already registered/i.test(m) ? 'هذا البريد مسجل مسبقاً' : /Email not confirmed/i.test(m) ? 'يجب تأكيد البريد من رسالة وصلتك' : /rate limit/i.test(m) ? 'محاولات كثيرة، انتظر قليلاً' : m;
+
+const Modal = ({ title, onClose, id, children }) => html`<div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-2" onClick=${onClose}><div id=${id} className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-auto p-5" onClick=${e => e.stopPropagation()}><div className="flex justify-between items-center mb-3"><h3 className="font-extrabold text-lg text-emerald-900">${title}</h3><button className="text-2xl leading-none text-gray-400 noprint" onClick=${onClose}>×</button></div>${children}</div></div>`;
+class Boundary extends React.Component {
+  constructor(p) { super(p); this.state = { e: null }; }
+  static getDerivedStateFromError(e) { return { e }; }
+  render() { return this.state.e ? html`<div className="p-6 text-red-700 text-sm">حدث خطأ غير متوقع: ${String(this.state.e.message || this.state.e)}<br/><button onClick=${() => location.reload()} className="underline mt-2">إعادة تحميل</button></div>` : this.props.children; }
+}
+let deferredInstall = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; window.dispatchEvent(new Event('canInstall')); });
+function Install() {
+  const [can, setCan] = useState(!!deferredInstall);
+  useEffect(() => { const f = () => setCan(true); window.addEventListener('canInstall', f); window.addEventListener('appinstalled', () => setCan(false)); return () => window.removeEventListener('canInstall', f); }, []);
+  if (!can) return null;
+  return html`<button className="text-sm bg-amber-400 text-emerald-950 font-bold rounded-lg px-2 py-1" onClick=${async () => { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; setCan(false); }}>📲 تثبيت</button>`;
+}
+function App() {
+  const [session, setSession] = useState(undefined);
+  useEffect(() => {
+    sb.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data } = sb.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => data.subscription.unsubscribe();
+  }, []);
+  if (session === undefined) return html`<p className="p-10 text-center text-gray-500">جارٍ التحميل…</p>`;
+  return session ? html`<${Funds} session=${session}/>` : html`<${Auth}/>`;
+}
+
+function Auth() {
+  const [mode, setMode] = useState('in'), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
+  const submit = async ev => {
+    const f = form(ev); setMsg(''); setBusy(true);
+    const { data, error } = mode === 'in'
+      ? await sb.auth.signInWithPassword({ email: f.email, password: f.password })
+      : await sb.auth.signUp({ email: f.email, password: f.password, options: { data: { name: f.name } } });
+    setBusy(false);
+    if (error) return setMsg(arMsg(error.message));
+    if (mode === 'up' && !data.session) setMsg('تم إنشاء الحساب. افتح رسالة التأكيد في بريدك ثم سجّل الدخول.');
+  };
+  return html`<form onSubmit=${submit} className="max-w-sm mx-auto mt-16 p-6 bg-white rounded-2xl shadow space-y-3">
+    <h1 className="text-3xl font-extrabold text-emerald-900 text-center">🌿 صندوقنا</h1>
+    <p className="text-center text-sm text-gray-500">إدارة الصناديق المشتركة بشفافية</p>
+    ${mode === 'up' && html`<${Inp} name="name" placeholder="الاسم" required/>`}
+    <${Inp} name="email" type="email" placeholder="البريد الإلكتروني" required/>
+    <${Inp} name="password" type="password" minLength="6" placeholder="كلمة المرور (6 أحرف على الأقل)" required/>
+    <button disabled=${busy} className="w-full py-2 rounded-lg bg-emerald-800 text-white font-bold disabled:opacity-50">${mode === 'in' ? 'دخول' : 'إنشاء حساب'}</button>
+    <button type="button" className="w-full text-sm text-emerald-800 underline" onClick=${() => { setMode(mode === 'in' ? 'up' : 'in'); setMsg(''); }}>${mode === 'in' ? 'ليس لدي حساب' : 'لدي حساب بالفعل'}</button>
+    ${msg && html`<p className="text-sm text-red-600">${msg}</p>`}
+  </form>`;
+}
+
+function Funds({ session }) {
+  const [funds, setFunds] = useState(null), [cur, setCur] = useState(null), [msg, setMsg] = useState('');
+  const load = useCallback(async () => {
+    const u = session.user;
+    await sb.from('profiles').upsert({ id: u.id, name: (u.user_metadata && u.user_metadata.name) || u.email.split('@')[0] });
+    const { data, error } = await sb.from('funds').select('*').order('created_at');
+    if (error) setMsg(error.message);
+    setFunds(data || []); setCur(c => c || (data && data[0] && data[0].id) || null);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const create = async ev => {
+    const f = form(ev), el = ev.target; setMsg('');
+    const { data, error } = await sb.rpc('create_fund_licensed', { p_code: f.code, p_name: f.name, p_fee: +f.fee, p_due: +f.due, p_start: f.start + '-01', p_currency: f.cur });
+    if (error) return setMsg(/license/i.test(error.message) ? 'كود المدير غير صحيح أو مستخدم من قبل أو منتهي' : error.message);
+    el.reset(); await load(); setCur(data);
+  };
+  const join = async ev => {
+    const f = form(ev), el = ev.target; setMsg('');
+    const { data, error } = await sb.rpc('join_fund', { p_code: f.code.trim() });
+    if (error) return setMsg(/limit/i.test(error.message) ? 'وصل الصندوق إلى الحد الأقصى من الأعضاء' : 'رمز الدعوة غير صحيح');
+    el.reset(); await load(); setCur(data);
+  };
+  if (!funds) return html`<p className="p-10 text-center text-gray-500">جارٍ التحميل…</p>`;
+  const fund = funds.find(f => f.id === cur);
+  const ym = new Date().toISOString().slice(0, 7);
+  return html`<div className="max-w-4xl mx-auto pb-10">
+    <header className="sticky top-0 z-40 bg-emerald-900 text-white p-3 flex flex-wrap gap-2 items-center shadow">
+      <b className="text-amber-200 text-lg">🌿 صندوقنا</b>
+      <select className="flex-1 min-w-[9rem] text-emerald-950 rounded-lg p-1.5 text-sm" value=${cur || ''} onChange=${e => setCur(e.target.value)}>${funds.map(f => html`<option key=${f.id} value=${f.id}>${f.name}</option>`)}</select>
+      <${Install}/><button className="text-sm underline" onClick=${() => sb.auth.signOut()}>خروج</button>
+    </header>
+    ${msg && html`<p className="m-3 text-sm text-red-600">${msg}</p>`}
+    ${fund ? html`<${Fund} key=${fund.id} fund=${fund} session=${session} reload=${load}/>` : html`<p className="p-8 text-center text-gray-500">لا توجد صناديق بعد. أنشئ صندوقك الأول أو انضم برمز دعوة 👇</p>`}
+    <div className="grid md:grid-cols-2 gap-3 px-3 mt-6">
+      <form onSubmit=${create} className="bg-white rounded-2xl p-4 shadow-sm space-y-2">
+        <b>＋ صندوق جديد</b>
+        <${Inp} name="code" placeholder="كود المدير (Admin Code)" required/>
+        <${Inp} name="name" placeholder="اسم الصندوق" required/>
+        <${Inp} name="fee" type="number" min="1" placeholder="الاشتراك الشهري" required/>
+        <${Inp} name="due" type="number" min="1" max="28" placeholder="يوم الاستحقاق (1-28)" required/>
+        <label className="block text-xs text-gray-500">العملة<select name="cur" className="w-full border rounded-lg p-2 bg-white mt-1"><option value="USD">دولار (USD)</option><option value="SAR">ريال سعودي (SAR)</option><option value="SDG">جنيه سوداني (SDG)</option></select></label>
+        <label className="block text-xs text-gray-500">بداية احتساب الاشتراكات (الأشهر قبلها لا تُحسب متأخرة)<${Inp} name="start" type="month" defaultValue=${ym} required/></label>
+        <button className="w-full py-2 rounded-lg bg-emerald-800 text-white">إنشاء</button>
+      </form>
+      <form onSubmit=${join} className="bg-white rounded-2xl p-4 shadow-sm space-y-2 self-start">
+        <b>🔗 الانضمام برمز دعوة</b>
+        <${Inp} name="code" placeholder="رمز الدعوة" required/>
+        <button className="w-full py-2 rounded-lg bg-amber-400 text-emerald-950 font-bold">انضمام</button>
+      </form>
+    </div></div>`;
+}
+
+function Fund({ fund, session, reload }) {
+  const [members, setMembers] = useState([]), [months, setMonths] = useState([]), [tx, setTx] = useState([]), [invs, setInvs] = useState([]);
+  const [tab, setTab] = useState('mem'), [open, setOpen] = useState(null), [late, setLate] = useState(false), [msg, setMsg] = useState(''), [edit, setEdit] = useState(null), [etx, setEtx] = useState(null), [einv, setEinv] = useState(null), [pendSubs, setPendSubs] = useState([]), [modal, setModal] = useState(null), [img, setImg] = useState(null), [busy, setBusy] = useState(false), [sell, setSell] = useState(null);
+  CUR = fund.currency || 'USD';
+  const uid = session.user.id;
+  const me = members.find(m => m.user_id === uid), admin = me && me.role === 'admin';
+  const load = useCallback(async () => {
+    const m = await sb.from('fund_members').select('*').eq('fund_id', fund.id).order('display_name');
+    const isA = (m.data || []).some(x => x.user_id === uid && x.role === 'admin');
+    const [mm, t, iv, ps] = await Promise.all([
+      sb.from('member_months').select('*').eq('fund_id', fund.id).order('month'),
+      sb.from(isA ? 'transactions' : 'transactions_public').select('*').eq('fund_id', fund.id),
+      sb.from('investments').select('*').eq('fund_id', fund.id).order('name'),
+      sb.from('subscriptions').select('*').eq('fund_id', fund.id).eq('status', 'pending')]);
+    setMembers(m.data || []); setMonths(mm.data || []); setTx(t.data || []); setInvs(iv.data || []); setPendSubs(ps.data || []);
+    if (t.error) setMsg('تعذّر تحميل الحركات: ' + t.error.message);
+  }, [fund.id]);
+  useEffect(() => { load(); }, [load]);
+  const run = async (p, ok) => { setMsg(''); const { error } = await p; if (error) setMsg(/overflow/i.test(error.message) ? 'القيمة المُدخلة كبيرة جداً — العائد المتوقع أقصاه 999%' : 'تعذّر التنفيذ: ' + error.message); else if (ok) setMsg(''); await load(); };
+  const by = id => months.filter(x => x.member_id === id);
+  const lateN = id => by(id).filter(x => x.status === 'late').length;
+  const cycle = (m, r) => admin && run(sb.rpc('set_month', { p_member: m.id, p_month: r.month, p_status: ['late', 'pending', 'future'].includes(r.status) ? 'paid' : r.status === 'paid' ? 'exempt' : null }));
+  const payAll = m => run(sb.rpc('pay_months', { p_member: m.id, p_months: by(m.id).filter(x => x.status === 'late').map(x => x.month) }));
+  const addMember = async ev => { const f = form(ev), el = ev.target; await run(sb.from('fund_members').insert({ fund_id: fund.id, display_name: f.n.trim() })); el.reset(); };
+  const rename = async ev => { const f = form(ev); await run(sb.from('fund_members').update({ display_name: f.n.trim() }).eq('id', edit.id)); setEdit(null); };
+  const delMember = async m => {
+    if (!confirm('حذف «' + m.display_name + '» نهائياً؟ سيُحذف سجل أشهره، وتُلغى مدفوعاته من الرصيد.')) return;
+    const { data: subs } = await sb.from('subscriptions').select('id').eq('member_id', m.id);
+    const ids = (subs || []).map(x => x.id);
+    if (ids.length) await sb.from('transactions').delete().in('subscription_id', ids);
+    await run(sb.from('fund_members').delete().eq('id', m.id));
+  };
+  const setStart = async ev => { const f = form(ev); await run(sb.from('funds').update({ start_month: f.start + '-01' }).eq('id', fund.id)); reload(); };
+  const addTx = (kind, extra) => ev => { const f = form(ev), el = ev.target; run(sb.from('transactions').insert({ fund_id: fund.id, kind, amount: +f.amt, description: f.desc || null, ...extra(f) })).then(() => el.reset()); };
+  const delTx = id => confirm('حذف هذا القيد؟') && run(sb.from('transactions').delete().eq('id', id));
+  const addInv = async ev => { const f = form(ev), el = ev.target; await run(sb.from('investments').insert({ fund_id: fund.id, name: f.n, type: f.ty, capital: +f.cap, expected_rate: +f.rate })); el.reset(); };
+  const delInv = async v => {
+    if (!confirm('حذف المشروع «' + v.name + '» نهائياً؟ سيُحذف معه كل ما سُجّل له من أرباح أو خسائر، وإن كان قائماً يعود رأس ماله إلى المتبقي.')) return;
+    const a = await sb.from('transactions').delete().eq('investment_id', v.id);
+    if (a.error) { setMsg('تعذّر حذف أرباح المشروع: ' + a.error.message); return; }
+    await run(sb.from('investments').delete().eq('id', v.id));
+  };
+  const orphanProfits = tx.filter(t => t.kind === 'profit' && !invs.some(v => v.id === t.investment_id));
+  const delOrphans = async () => { if (!confirm('حذف كل قيود الأرباح غير المرتبطة بمشروع (' + orphanProfits.length + ')؟')) return; await run(sb.from('transactions').delete().in('id', orphanProfits.map(t => t.id))); };
+  const saveTx = t => ev => { const f = form(ev); const p = { amount: +f.amt, description: f.desc || null };
+    if (t.kind === 'donation') { p.donor_name = f.name || null; p.anonymous = !!f.anon; }
+    if (t.kind === 'expense') { p.beneficiary = f.ben; p.hide_beneficiary = !!f.hide; }
+    run(sb.from('transactions').update(p).eq('id', t.id)); setEtx(null); };
+  const saveInv = v => ev => { const f = form(ev); run(sb.from('investments').update({ name: f.n, type: f.ty, capital: +f.cap, expected_rate: +f.rate }).eq('id', v.id)); setEinv(null); };
+  const Ed = (onClick) => admin ? html`<button onClick=${onClick} className="text-xs text-emerald-800 border border-emerald-200 rounded-lg px-2 py-1">✏️ تعديل</button>` : null;
+  const TxForm = t => html`<form key=${t.id} onSubmit=${saveTx(t)} className="space-y-2 py-3 border-t bg-emerald-50/50 rounded-lg px-2">
+    ${t.kind === 'donation' && html`<${Inp} name="name" defaultValue=${t.donor_name || ''} placeholder="اسم المتبرع (اختياري)"/>`}
+    ${t.kind === 'expense' && html`<${Inp} name="ben" defaultValue=${t.beneficiary || ''} placeholder="المستفيد" required/>`}
+    <${Inp} name="amt" type="number" min="0.01" step="any" defaultValue=${t.amount} required/>
+    <${Inp} name="desc" defaultValue=${t.description || ''} placeholder="البيان"/>
+    ${t.kind === 'donation' && html`<label className="flex gap-2 text-sm"><input type="checkbox" name="anon" defaultChecked=${!!t.anonymous}/> إظهاره كـ «فاعل خير»</label>`}
+    ${t.kind === 'expense' && html`<label className="flex gap-2 text-sm"><input type="checkbox" name="hide" defaultChecked=${!!t.hide_beneficiary}/> إخفاء اسم المستفيد</label>`}
+    <div className="flex gap-2"><${Btn}>حفظ التعديل<//><${Btn} type="button" cls="border" onClick=${() => setEtx(null)}>إلغاء<//></div></form>`;
+  const sellInv = v => async ev => {
+    const f = form(ev), amt = +f.amt, diff = amt - +v.capital;
+    const u = await sb.from('investments').update({ status: 'sold', sale_amount: amt, sold_on: f.d || new Date().toISOString().slice(0, 10) }).eq('id', v.id);
+    if (u.error) return setMsg('تعذّر تسجيل البيع: ' + u.error.message);
+    if (diff !== 0) { const r = await sb.from('transactions').insert({ fund_id: fund.id, kind: diff > 0 ? 'profit' : 'expense', amount: Math.abs(diff), description: (diff > 0 ? 'ربح بيع ' : 'خسارة بيع ') + v.name, beneficiary: diff < 0 ? 'خسارة بيع ' + v.name : null, investment_id: v.id }); if (r.error) setMsg('سُجّل البيع لكن تعذّر تسجيل الفرق: ' + r.error.message); }
+    setSell(null); await load();
+  };
+  const unsell = async v => { const u = await sb.from('investments').update({ status: 'active', sale_amount: null, sold_on: null }).eq('id', v.id); setMsg(u.error ? 'تعذّر: ' + u.error.message : '✅ عاد المشروع قائماً — احذف قيد ربح/خسارة البيع المرتبط به يدوياً'); await load(); };
+  const setCurrency = async ev => { const f = form(ev); await run(sb.from('funds').update({ currency: f.cur }).eq('id', fund.id)); reload(); };
+  const rotateCode = async () => { const c = Math.random().toString(36).slice(2, 10); await run(sb.from('funds').update({ invite_code: c }).eq('id', fund.id)); reload(); setMsg('✅ تغيّر رمز الدعوة'); };
+  const addProfit = v => ev => { const f = form(ev), el = ev.target; run(sb.from('transactions').insert({ fund_id: fund.id, kind: 'profit', amount: +f.amt, description: 'ربح ' + v.name, investment_id: v.id })).then(() => el.reset()); };
+  const wa = m => 'https://wa.me/?text=' + encodeURIComponent('السلام عليكم ' + m.display_name + ' 🌿\nتذكير لطيف بمتأخرات اشتراك «' + fund.name + '» (' + al(lateN(m.id)) + ' — ' + money(lateN(m.id) * fund.fee) + '). جزاك الله خيراً.');
+
+  const sumK = k => tx.filter(t => t.kind === k).reduce((s, t) => s + +t.amount, 0);
+  const invested = invs.filter(v => v.status !== 'sold').reduce((s, v) => s + +v.capital, 0);
+  const cash = sumK('subscription') + sumK('donation') + sumK('profit') - sumK('expense') - invested;
+  const assets = cash + invested;
+  const totalLate = members.reduce((s, m) => s + lateN(m.id), 0);
+  const byDate = k => tx.filter(t => t.kind === k).sort((a, b) => a.occurred_on < b.occurred_on ? 1 : -1);
+  let hk = 0;
+  const expNum = {}; tx.filter(t => t.kind === 'expense').sort((a, b) => a.occurred_on > b.occurred_on ? 1 : -1).forEach(t => { if (t.hide_beneficiary) expNum[t.id] = ++hk; });
+  const Stat = ({ t, v, ic }) => html`<${Card}><div className="text-2xl">${ic}</div><div className="text-xs text-gray-500 mt-1">${t}</div><div className="font-extrabold text-xl">${money(v)}</div><//>`;
+  const Del = ({ onClick }) => admin ? html`<button onClick=${onClick} className="text-xs text-red-600 border border-red-200 rounded-lg px-2 py-1">حذف</button>` : null;
+  const SRow = (l, v, cls = '') => html`<div className=${'flex justify-between py-1.5 border-b text-sm ' + cls}><span>${l}</span><b>${money(v)}</b></div>`;
+  const stmt = html`<div>${SRow('➕ إجمالي الاشتراكات المدفوعة', sumK('subscription'))}${SRow('➕ إجمالي التبرعات (أهل الخير)', sumK('donation'))}${SRow('➕ أرباح الاستثمار (عند البيع — اختياري)', sumK('profit'))}${SRow('➖ المصروفات والمساعدات', sumK('expense'))}${SRow('➖ رأس المال المستثمر (قائم)', invested)}
+    <div className="flex justify-between py-2 text-base font-extrabold text-emerald-900"><span>= المتبقي في الصندوق (غير مستثمر)</span><span className=${cash < 0 ? 'text-red-600' : ''}>${cash < 0 ? '-' : ''}${money(cash)}</span></div>${SRow('📦 إجمالي الأصول (نقد + مستثمر)', assets, 'text-gray-500')}
+    ${cash < 0 ? html`<p className="text-xs text-red-600 mt-1">⚠️ المستثمر أكبر من النقد المتاح — راجع المبالغ.</p>` : ''}</div>`;
+  const compress = f => new Promise((res, rej) => { const i = new Image(), u = URL.createObjectURL(f); i.onload = () => { const k = Math.min(1, 1280 / Math.max(i.width, i.height)), c = document.createElement('canvas'); c.width = Math.round(i.width * k); c.height = Math.round(i.height * k); c.getContext('2d').drawImage(i, 0, 0, c.width, c.height); URL.revokeObjectURL(u); c.toBlob(b => b ? res(b) : rej(new Error('تعذّر ضغط الصورة')), 'image/jpeg', 0.72); }; i.onerror = () => rej(new Error('الملف ليس صورة صالحة')); i.src = u; });
+  const myLate = me ? by(me.id).filter(x => x.status === 'late') : [];
+  const myOpen = me ? by(me.id).filter(x => x.status === 'late' || x.status === 'future') : [];
+  const sendReceipt = async ev => {
+    ev.preventDefault(); const fd = new FormData(ev.target), mos = fd.getAll('mo'), file = fd.get('file');
+    if (!mos.length || !file || !file.size) return setMsg('اختر شهراً واحداً على الأقل وأرفق صورة الإشعار');
+    setBusy(true);
+    try {
+      const blob = await compress(file), path = uid + '/' + fund.id + '/' + Date.now() + '.jpg';
+      const up = await sb.storage.from('receipts').upload(path, blob, { contentType: 'image/jpeg' });
+      if (up.error) throw up.error;
+      for (const mo of mos) { const r = await sb.rpc('submit_receipt', { p_member: me.id, p_month: mo, p_path: path }); if (r.error) throw r.error; }
+      setModal(null); setMsg('✅ تم رفع الإشعار — بانتظار موافقة المشرف');
+    } catch (e) { setMsg('تعذّر رفع الإشعار: ' + (e.message || e)); }
+    setBusy(false); await load();
+  };
+  const viewReceipt = async path => { const { data, error } = await sb.storage.from('receipts').createSignedUrl(path, 300); if (error) return setMsg('تعذّر فتح الصورة: ' + error.message); setImg(data.signedUrl); };
+  const groups = Object.values(pendSubs.reduce((a, x) => { const k = x.member_id + '|' + (x.receipt_path || x.id); (a[k] = a[k] || { k, member_id: x.member_id, path: x.receipt_path, subs: [] }).subs.push(x); return a; }, {}));
+  const apprGroup = async (g, ok) => {
+    for (const x of g.subs) { const r = await sb.rpc('set_month', { p_member: x.member_id, p_month: x.month, p_status: ok ? 'paid' : null }); if (r.error) { setMsg('تعذّر التنفيذ: ' + r.error.message); await load(); return; } }
+    setMsg(ok ? '✅ تمت الموافقة — سُجّل الدفع في اسم العضو وأُضيف للرصيد' : 'تم رفض الإشعار'); await load();
+  };
+  const pendBox = admin && groups.length > 0 ? html`<${Card} cls="border-orange-300 bg-orange-50"><h3 className="font-bold text-orange-900 mb-2">🟠 إشعارات دفع بانتظار موافقتك (${groups.length})</h3>
+    ${groups.map(g => { const m = members.find(x => x.id === g.member_id); return html`<div key=${g.k} className="py-2 border-t border-orange-200"><b>${m ? m.display_name : 'عضو'}</b> — ${g.subs.map(x => MN[+x.month.slice(5, 7) - 1] + ' ' + x.month.slice(0, 4)).join('، ')} (${money(g.subs.length * fund.fee)})
+      <div className="flex gap-2 mt-2 flex-wrap">${g.path && html`<${Btn} cls="border" onClick=${() => viewReceipt(g.path)}>🖼 عرض الإشعار<//>`}<${Btn} onClick=${() => apprGroup(g, true)}>✔ موافقة وتسجيل الدفع<//><${Btn} cls="border text-red-600" onClick=${() => apprGroup(g, false)}>✖ رفض<//></div></div>`; })}<//>` : null;
+  const myBox = me && myOpen.length > 0 ? html`<${Card}><div className="flex flex-wrap items-center justify-between gap-2"><div className="text-sm">${myLate.length > 0 ? html`عليك <b className="text-red-600">${al(myLate.length)}</b> (${money(myLate.length * fund.fee)})` : 'لا متأخرات عليك 🎉 — يمكنك الدفع مقدّماً'}</div><${Btn} onClick=${() => setModal('rcpt')}>📤 رفع إشعار دفع<//></div><//>` : null;
+  const myPend = me && pendSubs.some(x => x.member_id === me.id) ? html`<div className="rounded-xl bg-orange-50 border border-orange-200 text-orange-900 p-3 text-sm">🟠 إشعارك قيد المراجعة من المشرف</div>` : null;
+  const claim = async () => { const el = document.getElementById('claimSel'); if (!el || !el.value) return; const { error } = await sb.rpc('claim_member', { p_member: el.value }); setMsg(error ? 'تعذّر الربط: ' + (/records/.test(error.message) ? 'لحسابك الحالي سجلات مسبقة' : error.message) : '✅ تم ربط حسابك بالاسم'); await load(); };
+  const unlinked = members.filter(m => !m.user_id);
+  const claimBox = me && me.role !== 'admin' && unlinked.length > 0 ? html`<${Card} cls="border-emerald-300"><b className="text-sm">🔗 هل اسمك مسجّل مسبقاً في الصندوق؟</b><p className="text-xs text-gray-500 my-1">اختر اسمك لتنتقل إليه أشهرك ومدفوعاتك المسجّلة.</p><div className="flex gap-2"><select id="claimSel" className="flex-1 border rounded-lg p-2 bg-white"><option value="">اختر اسمك…</option>${unlinked.map(m => html`<option key=${m.id} value=${m.id}>${m.display_name}</option>`)}</select><${Btn} onClick=${claim}>ربط<//></div><//>` : null;
+  const rcptModal = html`<${Modal} title="رفع إشعار دفع" onClose=${() => setModal(null)}><form onSubmit=${sendReceipt} className="space-y-3">
+    <p className="text-sm text-gray-600">اختر الأشهر التي يغطيها التحويل وأرفق صورة الإشعار. بعد موافقة المشرف يُسجَّل الدفع في اسمك مباشرة.</p>
+    <div className="grid grid-cols-2 gap-2">${myOpen.map((r, i) => html`<label key=${r.month} className="flex items-center gap-2 border rounded-lg p-2 text-sm"><input type="checkbox" name="mo" value=${r.month} defaultChecked=${i === 0 && r.status === 'late'}/> ${MN[+r.month.slice(5, 7) - 1]} ${r.month.slice(0, 4)}${r.status === 'future' ? ' (مقدّم)' : ''}</label>`)}</div>
+    <p className="text-xs text-gray-500">المبلغ المتوقع: ${money(fund.fee)} لكل شهر</p>
+    <input type="file" name="file" accept="image/*" required className="w-full border rounded-lg p-2 bg-white"/>
+    <button disabled=${busy} className="w-full py-2 rounded-lg bg-emerald-800 text-white font-bold disabled:opacity-50">${busy ? 'جارٍ الرفع…' : 'إرسال الإشعار'}</button></form><//>`;
+  const imgModal = html`<${Modal} title="إشعار الدفع" onClose=${() => setImg(null)}><img src=${img} className="w-full rounded-lg"/><//>`;
+  const KL = { subscription: 'اشتراك', donation: 'تبرع', profit: 'ربح استثمار', expense: 'مصروف' };
+  const sortedTx = [...tx].sort((a, b) => a.occurred_on < b.occurred_on ? -1 : a.occurred_on > b.occurred_on ? 1 : 0);
+  let rn = 0; const rows = sortedTx.map(t => { rn += t.kind === 'expense' ? -t.amount : +t.amount; return { ...t, run: rn }; });
+  const mxv = Math.max(...rows.map(r => r.run), 1);
+  const pts = rows.map((r, i) => (rows.length < 2 ? 250 : 10 + i * 480 / (rows.length - 1)) + ',' + (120 - Math.max(r.run, 0) / mxv * 100)).join(' ');
+  const waText = '📊 تقرير «' + fund.name + '»\nالمتبقي (غير مستثمر): ' + (cash < 0 ? '-' : '') + money(cash) + '\nالمستثمر: ' + money(invested) + '\nإجمالي الأصول: ' + money(assets) + '\nالاشتراكات: ' + money(sumK('subscription')) + ' | التبرعات: ' + money(sumK('donation')) + '\nالمصروفات: ' + money(sumK('expense')) + ' | الأرباح: ' + money(sumK('profit')) + '\nالمتأخرات: ' + al(totalLate) + ' (' + money(totalLate * fund.fee) + ')';
+  const repModal = html`<${Modal} id="rep" title=${'تقرير ' + fund.name + ' — ' + new Date().toISOString().slice(0, 10)} onClose=${() => setModal(null)}>
+    ${stmt}
+    <h4 className="font-bold mt-4 mb-1">نمو الرصيد النقدي</h4>
+    <svg viewBox="0 0 500 130" className="w-full bg-emerald-50 rounded-xl"><polyline points=${pts} fill="none" stroke="#047857" strokeWidth="3"/></svg>
+    <h4 className="font-bold mt-4 mb-1">المشاريع الاستثمارية</h4>
+    ${invs.length === 0 ? html`<p className="text-sm text-gray-500">لا توجد مشاريع</p>` : html`<table className="w-full text-sm"><thead><tr className="bg-emerald-900 text-white"><th className="p-2">المشروع</th><th className="p-2">رأس المال</th><th className="p-2">العائد المتوقع</th><th className="p-2">أرباح فعلية</th><th className="p-2">الحالة</th></tr></thead><tbody>${invs.map(v => html`<tr key=${v.id} className="border-b text-center"><td className="p-2">${v.name}</td><td className="p-2">${money(v.capital)}</td><td className="p-2">${v.expected_rate || 0}%</td><td className="p-2">${money(tx.filter(t => t.kind === 'profit' && t.investment_id === v.id).reduce((s, t) => s + +t.amount, 0))}</td><td className="p-2">${v.status === 'sold' ? 'مباع بـ ' + money(v.sale_amount) : 'قائم'}</td></tr>`)}</tbody></table>`}
+    <h4 className="font-bold mt-4 mb-1">متأخرات الأعضاء</h4>
+    ${totalLate === 0 ? html`<p className="text-sm text-emerald-700">لا توجد متأخرات 🎉</p>` : html`<div>${members.filter(m => lateN(m.id) > 0).map(m => html`<div key=${m.id} className="flex justify-between text-sm py-1 border-b"><span>${m.display_name}</span><span>${al(lateN(m.id))} — ${money(lateN(m.id) * fund.fee)}</span></div>`)}<div className="flex justify-between font-bold text-sm py-1"><span>الإجمالي</span><span>${money(totalLate * fund.fee)}</span></div></div>`}
+    <h4 className="font-bold mt-4 mb-1">كشف الحركات</h4>
+    <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="bg-emerald-900 text-white"><th className="p-2">التاريخ</th><th className="p-2">البيان</th><th className="p-2">وارد</th><th className="p-2">صادر</th><th className="p-2">الرصيد</th></tr></thead><tbody>
+      ${rows.map(r => html`<tr key=${r.id} className="border-b text-center"><td className="p-2">${r.occurred_on}</td><td className="p-2 text-right">${KL[r.kind] || ''}${r.kind === 'donation' ? ' — ' + (r.anonymous || !r.donor_name ? 'فاعل خير' : r.donor_name) : r.kind === 'expense' && r.hide_beneficiary ? ' — حالة سرية' : r.description ? ' — ' + r.description : ''}</td><td className="p-2 text-emerald-700">${r.kind !== 'expense' ? money(r.amount) : ''}</td><td className="p-2 text-red-600">${r.kind === 'expense' ? money(r.amount) : ''}</td><td className="p-2 font-bold">${r.run < 0 ? '-' : ''}${money(r.run)}</td></tr>`)}</tbody></table></div>
+    <p className="text-xs text-gray-500 mt-2">الرصيد في الكشف يخص الحركات النقدية، ورأس المال المستثمر مخصوم في الملخص أعلاه.</p>
+    <div className="flex gap-2 mt-4 noprint flex-wrap"><${Btn} onClick=${() => window.print()}>🖨️ طباعة / حفظ PDF<//><a href=${'https://wa.me/?text=' + encodeURIComponent(waText)} target="_blank" rel="noopener" className="px-3 py-1.5 rounded-lg text-sm bg-green-500 text-white">💬 مشاركة ملخص واتساب</a></div>
+  <//>`;
+  const appUrl = location.origin + location.pathname.replace(/index\.html$/, '');
+  const inviteLink = 'https://wa.me/?text=' + encodeURIComponent('دعوة للانضمام إلى «' + fund.name + '» 🌿\n1) افتح الرابط: ' + appUrl + '\n2) أنشئ حساباً جديداً\n3) اضغط «الانضمام برمز دعوة» وأدخل الرمز: ' + fund.invite_code + '\n4) لتثبيته: ⋮ ثم «تثبيت التطبيق» (في الآيفون: مشاركة ثم إضافة إلى الشاشة الرئيسية)');
+  const tabs = [['mem', '👥 الأعضاء'], ['don', '🤲 أهل الخير'], ['inv', '📈 الاستثمارات'], ['exp', '🧾 المصروفات']];
+
+  const memTab = html`<${Card}>
+    <div className="flex flex-wrap items-center justify-between gap-2 mb-2"><h3 className="font-bold text-emerald-900">الأعضاء وأشهر الاشتراك</h3>
+      <button onClick=${() => setLate(!late)} className=${'px-3 py-1 rounded-full text-sm border ' + (late ? 'bg-red-600 text-white border-red-600' : 'bg-white')}>🔴 المتأخرون فقط</button></div>
+    ${members.filter(m => !late || lateN(m.id) > 0).map(m => { const n = lateN(m.id); return html`<div key=${m.id} className="py-3 border-t">
+      ${edit && edit.id === m.id ? html`<form onSubmit=${rename} className="flex gap-2"><${Inp} name="n" defaultValue=${m.display_name} required/><${Btn}>حفظ<//><${Btn} type="button" cls="border" onClick=${() => setEdit(null)}>إلغاء<//></form>` : html`
+      <div className="flex flex-wrap items-center gap-2">
+        <b className="flex-1 min-w-[7rem]">${m.display_name}${m.user_id === uid ? ' (أنت)' : ''}${m.role === 'admin' ? ' 🛡️' : ''}</b>
+        ${n > 0 ? html`<span className="text-xs px-2 py-1 rounded-full bg-red-600 text-white">متأخر ${al(n)} — ${money(n * fund.fee)}</span>` : html`<span className="text-xs text-emerald-700">لا متأخرات 🎉</span>`}
+        <${Btn} cls="border" onClick=${() => setOpen(open === m.id ? null : m.id)}>📅 الأشهر<//>
+        ${admin && html`<${Btn} cls="border" onClick=${() => setEdit({ id: m.id })}>✏️ تعديل<//>`}
+        ${admin && m.user_id !== uid && html`<${Btn} cls="border text-red-600" onClick=${() => delMember(m)}>🗑 حذف<//>`}
+        ${admin && n > 0 && html`<a href=${wa(m)} target="_blank" rel="noopener" className="px-3 py-1.5 rounded-lg text-sm bg-green-500 text-white">💬 تذكير</a>`}
+      </div>`}
+      ${open === m.id && html`<div className="mt-3"><div className="grid grid-cols-3 sm:grid-cols-4 gap-2">${by(m.id).map(r => html`<button key=${r.month} disabled=${!admin} onClick=${() => cycle(m, r)} className=${'rounded-xl p-3 text-sm ' + STY[r.status]}><div className="font-bold">${MN[+r.month.slice(5, 7) - 1]} ${r.month.slice(0, 4)}</div><div className="text-xs">${LBL[r.status]}</div></button>`)}</div>
+        ${admin ? html`<p className="text-xs text-gray-500 mt-2">اضغط الشهر لتبديله: متأخر ← مدفوع ← معفي ← متأخر. الأشهر القادمة (⚪) تقبل تسجيل دفع مقدّم، ولا تُحسب متأخرات.</p>${n > 0 && html`<${Btn} cls="mt-2 w-full bg-emerald-800 text-white" onClick=${() => payAll(m)}>سداد كل المتأخرات (${money(n * fund.fee)})<//>`}` : ''}</div>`}
+    </div>`; })}
+    ${late && totalLate === 0 && html`<p className="text-center text-gray-500 py-6">لا يوجد متأخرون 🎉</p>`}
+    ${admin && html`<form onSubmit=${addMember} className="flex gap-2 mt-3 pt-3 border-t"><${Inp} name="n" placeholder="إضافة عضو بالاسم" required/><${Btn}>＋ إضافة<//></form>
+    <form onSubmit=${setStart} className="flex gap-2 items-center mt-3"><span className="text-sm whitespace-nowrap">بداية الاحتساب</span><${Inp} name="start" type="month" defaultValue=${fund.start_month.slice(0, 7)} required/><${Btn} cls="border">حفظ<//></form>
+    <form onSubmit=${setCurrency} className="flex gap-2 items-center mt-3"><span className="text-sm whitespace-nowrap">العملة</span><select name="cur" defaultValue=${fund.currency || 'USD'} className="flex-1 border rounded-lg p-2 bg-white"><option value="USD">دولار (USD)</option><option value="SAR">ريال سعودي (SAR)</option><option value="SDG">جنيه سوداني (SDG)</option></select><${Btn} cls="border">حفظ<//></form>
+    <div className="mt-3 flex items-center gap-2 flex-wrap"><${Btn} cls="border" onClick=${rotateCode}>🔄 تغيير رمز الدعوة<//><span className="text-xs text-gray-500">يمنع انضمام جدد بالرمز القديم</span></div>`}
+  <//>`;
+
+  const donTab = html`<${Card}><h3 className="font-bold text-emerald-900 mb-2">سجل أهل الخير</h3>
+    ${byDate('donation').map(t => etx === t.id ? TxForm(t) : html`<div key=${t.id} className="flex justify-between gap-2 py-3 border-t"><div><b>${t.anonymous ? (admin && t.donor_name ? t.donor_name + ' 🔒 (للأعضاء: فاعل خير)' : 'فاعل خير') : (t.donor_name || 'فاعل خير')}</b><div className="text-xs text-gray-500">${t.description || ''} • ${t.occurred_on}</div></div><div className="flex items-center gap-2"><b className="text-emerald-700">${money(t.amount)}</b>${Ed(() => setEtx(t.id))}<${Del} onClick=${() => delTx(t.id)}/></div></div>`)}
+    ${byDate('donation').length === 0 && html`<p className="text-center text-gray-500 py-4">لا توجد تبرعات بعد</p>`}
+    ${admin && html`<form onSubmit=${addTx('donation', f => ({ donor_name: f.name || null, anonymous: !!f.anon }))} className="mt-3 pt-3 border-t space-y-2"><b className="text-sm">＋ تسجيل تبرع</b>
+      <${Inp} name="name" placeholder="اسم المتبرع (اختياري)"/><${Inp} name="amt" type="number" min="1" step="any" placeholder="المبلغ" required/><${Inp} name="desc" placeholder="الغرض"/>
+      <label className="flex gap-2 text-sm"><input type="checkbox" name="anon"/> إظهاره كـ «فاعل خير»</label><${Btn}>حفظ التبرع<//></form>`}<//>`;
+
+  const invTab = html`<div className="space-y-3">${invs.map(v => { const p = tx.filter(t => t.kind === 'profit' && t.investment_id === v.id).reduce((s, t) => s + +t.amount, 0); return html`
+    <${Card} key=${v.id}>${einv === v.id ? html`<form onSubmit=${saveInv(v)} className="space-y-2"><${Inp} name="n" defaultValue=${v.name} required/><${Inp} name="ty" defaultValue=${v.type || ''} placeholder="النوع"/><${Inp} name="cap" type="number" min="1" step="any" defaultValue=${v.capital} required/><${Inp} name="rate" type="number" min="0" max="999" step="0.1" defaultValue=${v.expected_rate || 0} required/><div className="flex gap-2"><${Btn}>حفظ التعديل<//><${Btn} type="button" cls="border" onClick=${() => setEinv(null)}>إلغاء<//></div></form>` : html`<div className="flex justify-between items-center gap-2"><b>${v.name}</b><span className="flex items-center gap-2"><span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full">${v.type || 'استثمار'}</span>${v.status === 'sold' && html`<span className="text-xs bg-gray-200 px-2 py-1 rounded-full">مباع</span>`}${Ed(() => setEinv(v.id))}</span></div>`}
+      <div className="grid grid-cols-3 gap-2 text-center mt-4 text-sm"><div><div className="text-gray-500 text-xs">رأس المال</div><b>${money(v.capital)}</b></div><div><div className="text-gray-500 text-xs">العائد المتوقع</div><b>${v.expected_rate || 0}%</b></div><div><div className="text-gray-500 text-xs">أرباح فعلية</div><b className="text-emerald-700">${money(p)}</b></div></div>
+      ${tx.filter(t => t.kind === 'profit' && t.investment_id === v.id).map(t => etx === t.id ? TxForm(t) : html`<div key=${t.id} className="flex justify-between items-center text-sm py-1 border-t mt-1"><span className="text-gray-500">أرباح ${t.occurred_on}</span><span className="flex items-center gap-2"><b>${money(t.amount)}</b>${Ed(() => setEtx(t.id))}<${Del} onClick=${() => delTx(t.id)}/></span></div>`)}
+      ${v.status === 'sold' && html`<p className="text-sm text-gray-600 mt-2">💰 بيع بمبلغ ${money(v.sale_amount)} بتاريخ ${v.sold_on || ''} — ${+v.sale_amount - +v.capital >= 0 ? 'ربح' : 'خسارة'} ${money(+v.sale_amount - +v.capital)}</p>`}
+      ${admin && v.status !== 'sold' && (sell === v.id ? html`<form onSubmit=${sellInv(v)} className="space-y-2 mt-3 p-2 bg-amber-50 rounded-lg"><b className="text-sm">💰 تسجيل بيع «${v.name}»</b><${Inp} name="amt" type="number" min="0" step="any" placeholder="مبلغ البيع" required/><${Inp} name="d" type="date" defaultValue=${new Date().toISOString().slice(0, 10)}/><p className="text-xs text-gray-500">الفرق عن رأس المال (${money(v.capital)}) يُسجَّل تلقائياً ربحاً أو خسارة، ويعود رأس المال إلى المتبقي.</p><div className="flex gap-2"><${Btn}>تأكيد البيع<//><${Btn} type="button" cls="border" onClick=${() => setSell(null)}>إلغاء<//></div></form>` : html`<div className="flex gap-2 mt-3 flex-wrap"><${Btn} onClick=${() => setSell(v.id)}>💰 تسجيل بيع<//><${Del} onClick=${() => delInv(v)}/></div>`)}
+      ${admin && v.status === 'sold' && html`<div className="flex gap-2 mt-3 flex-wrap"><${Btn} cls="border" onClick=${() => unsell(v)}>↩ إلغاء حالة البيع<//><${Del} onClick=${() => delInv(v)}/></div>`}
+      ${admin && v.status !== 'sold' && html`<form onSubmit=${addProfit(v)} className="flex gap-2 mt-2"><${Inp} name="amt" type="number" min="1" step="any" placeholder="ربح اختياري (إيجار / عائد دوري)" required/><${Btn} cls="border">＋<//></form>`}<//>`; })}
+    ${orphanProfits.length > 0 && html`<${Card} cls="border-orange-300 bg-orange-50"><h3 className="font-bold text-orange-900">⚠️ أرباح غير مرتبطة بأي مشروع (${orphanProfits.length}) — المجموع ${money(orphanProfits.reduce((x, t) => x + +t.amount, 0))}</h3><p className="text-xs text-gray-600 my-1">هذه قيود أرباح بقيت بعد حذف مشروع، وهي مضافة إلى المتبقي. احذفها إن كانت خاطئة.</p>
+      ${orphanProfits.map(t => etx === t.id ? TxForm(t) : html`<div key=${t.id} className="flex justify-between items-center text-sm py-2 border-t border-orange-200"><span>${t.description || 'ربح'} • ${t.occurred_on}</span><span className="flex items-center gap-2"><b>${money(t.amount)}</b>${Ed(() => setEtx(t.id))}<${Del} onClick=${() => delTx(t.id)}/></span></div>`)}
+      ${admin && html`<${Btn} cls="mt-2 border text-red-600" onClick=${delOrphans}>🗑 حذف كل هذه الأرباح<//>`}<//>`}
+    ${invs.length === 0 && html`<p className="text-center text-gray-500 py-6">لا توجد مشاريع استثمارية بعد</p>`}
+    ${admin && html`<${Card}><form onSubmit=${addInv} className="space-y-2"><b>＋ مشروع استثماري جديد</b><${Inp} name="n" placeholder="اسم المشروع" required/><${Inp} name="ty" placeholder="النوع (عقار / أسهم / تجارة)"/><${Inp} name="cap" type="number" min="1" step="any" placeholder="رأس المال" required/><${Inp} name="rate" type="number" min="0" max="999" step="0.1" placeholder="العائد المتوقع % (حتى 999)" required/><${Btn}>حفظ المشروع<//></form><//>`}</div>`;
+
+  const expTab = html`<${Card}><h3 className="font-bold text-emerald-900 mb-2">سجل المصروفات</h3>
+    ${byDate('expense').map(t => etx === t.id ? TxForm(t) : html`<div key=${t.id} className="flex justify-between gap-2 py-3 border-t"><div><b>${t.hide_beneficiary ? (admin ? (t.beneficiary || '—') + ' 🔒 (للأعضاء: حالة إنسانية سرية #' + expNum[t.id] + ')' : 'حالة إنسانية سرية #' + expNum[t.id]) : (t.beneficiary || '—')}</b><div className="text-xs text-gray-500">${t.description || ''} • ${t.occurred_on}</div></div><div className="flex items-center gap-2"><b className="text-red-600 whitespace-nowrap">- ${money(t.amount)}</b>${Ed(() => setEtx(t.id))}<${Del} onClick=${() => delTx(t.id)}/></div></div>`)}
+    ${byDate('expense').length === 0 && html`<p className="text-center text-gray-500 py-4">لا توجد مصروفات بعد</p>`}
+    ${admin && html`<form onSubmit=${addTx('expense', f => ({ beneficiary: f.ben, hide_beneficiary: !!f.hide }))} className="mt-3 pt-3 border-t space-y-2"><b className="text-sm">＋ تسجيل مصروف / مساعدة</b>
+      <${Inp} name="ben" placeholder="المستفيد / الجهة" required/><${Inp} name="amt" type="number" min="1" step="any" placeholder="المبلغ" required/><${Inp} name="desc" placeholder="البيان" required/>
+      <label className="flex gap-2 text-sm"><input type="checkbox" name="hide"/> إخفاء اسم المستفيد (حالة إنسانية سرية)</label><${Btn}>حفظ المصروف<//></form>`}<//>`;
+
+  return html`<main className="px-3 pt-3 space-y-3">
+    <div className="rounded-2xl p-6 text-white shadow" style=${{ background: 'linear-gradient(135deg,#064e3b,#047857)' }}>
+      <div className="text-emerald-100 text-sm">المتبقي في الصندوق (غير مستثمر) — ${fund.name}</div>
+      <div className="text-5xl font-extrabold my-2" style=${{ color: cash < 0 ? '#fca5a5' : '#fde68a' }}>${cash < 0 ? '-' : ''}${money(cash)}</div>
+      <div className="text-xs text-emerald-100">المستثمر: ${money(invested)} • إجمالي الأصول: ${money(assets)}</div>
+      <div className="text-xs text-emerald-100 mt-1">الاشتراك ${money(fund.fee)} شهرياً — يستحق يوم ${fund.due_day}${admin ? html` — رمز الدعوة: <b className="select-all bg-emerald-950/40 px-2 py-0.5 rounded">${fund.invite_code}</b> <a href=${inviteLink} target="_blank" rel="noopener" className="underline text-amber-200">📨 إرسال دعوة</a>` : ''}</div>
+      <button onClick=${() => setModal('rep')} className="mt-3 px-4 py-2 rounded-lg bg-amber-400 text-emerald-950 font-bold">📄 تقرير الصندوق بالتفصيل</button>
+    </div>
+    <${Card}><h3 className="font-bold text-emerald-900 mb-1">خطة الصندوق: من أين وإلى أين؟</h3>${stmt}<//>
+    ${totalLate > 0 && html`<div className="rounded-xl bg-red-50 border border-red-200 text-red-900 p-3 text-sm">🔴 إجمالي المتأخرات: ${al(totalLate)} على مستوى الأعضاء (${money(totalLate * fund.fee)})</div>`}
+    ${msg && html`<p className=${'text-sm ' + (/^✅/.test(msg) ? 'text-emerald-700' : 'text-red-600')}>${msg}</p>`}
+    ${pendBox}${myPend}${myBox}${claimBox}
+    ${!admin && me && html`<p className="text-xs text-gray-500">👤 أنت عضو: ترى كل التفاصيل والتقرير، وترفع إشعارات الدفع. الإضافة والتعديل للمشرف فقط.</p>`}
+    <nav className="flex gap-1 overflow-x-auto">${tabs.map(([k, t]) => html`<button key=${k} onClick=${() => setTab(k)} className=${'whitespace-nowrap px-3 py-1.5 rounded-full text-sm ' + (tab === k ? 'bg-emerald-800 text-white font-bold' : 'bg-white border')}>${t}</button>`)}</nav>
+    ${{ mem: memTab, don: donTab, inv: invTab, exp: expTab }[tab]}
+    ${!me && html`<p className="text-xs text-gray-500">أنت لست عضواً في هذا الصندوق بعد.</p>`}
+    ${modal === 'rep' && repModal}${modal === 'rcpt' && me && rcptModal}${img && imgModal}
+  </main>`;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Boundary, null, React.createElement(App)));
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
